@@ -1,2 +1,1 @@
-# geonomia-gazetteer
-Geonames-based gazetteer
+A project that presents a geonames gazetteer for a specified country as a datasette instance with an MCP server configured for use in AI applications which support tool calling. Planned to integrate with geonomia for location intelligence.
