@@ -1,0 +1,12 @@
+{
+  "name": "Geonomia Gazetteer",
+  "image": "mcr.microsoft.com/devcontainers/python:3-bullseye",
+  "postCreateCommand": "make install",
+  "forwardPorts": [8001],
+  "portsAttributes": {
+    "8001": {
+      "label": "Datasette",
+      "onAutoForward": "notify"
+    }
+  }
+}
