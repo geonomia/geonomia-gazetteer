@@ -1,0 +1,14 @@
+{
+    "databases": {
+        "geonames": {
+            "tables": {
+                "feature_classes": {
+                    "label_column": "description"
+                },
+                "feature_codes": {
+                    "label_column": "description"
+                }
+            }
+        }
+    }
+}
