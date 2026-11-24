@@ -38,6 +38,10 @@ data/geonames.db: data/$(COUNTRY_CODE).txt | $(VENV_SENTINEL)
 	$(PYTHON) -m sqlite_utils insert $@ feature_classes resources/feature_classes.csv --csv --pk=code
 	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_feature_codes.sql
 	$(PYTHON) -m sqlite_utils insert $@ feature_codes resources/feature_codes.csv --csv --pk=code
+	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_admin_1_codes.sql
+	$(PYTHON) -m sqlite_utils insert $@ admin_1_codes resources/admin_1_codes.csv --csv --pk=code
+	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_admin_2_codes.sql
+	$(PYTHON) -m sqlite_utils insert $@ admin_2_codes resources/admin_2_codes.csv --csv --pk=code
 	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_geonames.sql
 	{ $(PYTHON) -c 'print("\t".join(["geonameid","name","asciiname","alternatenames","latitude","longitude","feature_class","feature_code","country_code","cc2","admin1_code","admin2_code","admin3_code","admin4_code","population","elevation","dem","timezone","modification_date"]))'; cat data/$(COUNTRY_CODE).txt; } | $(PYTHON) -m sqlite_utils insert $@ geonames - --tsv --pk=geonameid
 	
