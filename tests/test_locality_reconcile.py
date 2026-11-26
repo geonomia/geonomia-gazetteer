@@ -199,6 +199,44 @@ def test_preview(ds):
     assert get(ds, BASE + "/preview?id=nope").status_code == 404
 
 
+def test_preview_outline(ds):
+    district = get(ds, BASE + "/preview?id=MYS.1.4_1").text
+    assert district.count("<path") == 2            # the state, then the district
+    state = get(ds, BASE + "/preview?id=MYS.1_1").text
+    assert state.count("<path") == 1
+
+
+# --- maps ------------------------------------------------------------------
+
+def columns(ds, table):
+    return asyncio.run(ds.get_database("geonames").table_columns(table))
+
+
+def test_display_geometry_is_small(ds):
+    assert "geometry" in columns(ds, "gadm_units")
+    response = get(ds, "/geonames/gadm_units.geojson?_size=max")
+    assert response.status_code == 200
+    features = response.json()["features"]
+    assert len(features) == 160 and all(f["geometry"] for f in features)
+    assert len(response.content) < 1_500_000       # full resolution is ~10 MB
+
+
+def test_geonames_gets_only_the_cluster_map(ds):
+    # A column named geometry would add a second, polygon map to the page
+    assert "geom" in columns(ds, "geonames") and "geometry" not in columns(ds, "geonames")
+    html = get(ds, "/geonames/geonames").text
+    assert "datasette-cluster-map" in html
+    assert "datasette-geojson-map" not in html
+
+
+def test_gadm_units_gets_only_the_polygon_map(ds):
+    # Its lat/lon centre columns would otherwise add a point map too
+    html = get(ds, "/geonames/gadm_units").text
+    assert "datasette-geojson-map" in html
+    assert "datasette-cluster-map" not in html
+    assert "opentopomap" in html
+
+
 def test_view_redirects_to_row(ds):
     response = get(ds, BASE + "/view/MYS.1.4_1")
     assert response.status_code == 302

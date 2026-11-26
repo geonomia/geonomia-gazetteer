@@ -33,12 +33,12 @@ admin AS (
 nearby AS (
     SELECT g.geonameid, g.name, g.feature_code, g.latitude, g.longitude,
            g.admin1_code, g.admin2_code,
-           ST_Distance(g.geometry, pt.g, 1) AS distance_m,
-           Degrees(Azimuth(g.geometry, pt.g)) AS azimuth
+           ST_Distance(g.geom, pt.g, 1) AS distance_m,
+           Degrees(Azimuth(g.geom, pt.g)) AS azimuth
     FROM geonames AS g, pt
     WHERE g.rowid IN (
         SELECT rowid FROM SpatialIndex
-        WHERE f_table_name = 'geonames' AND f_geometry_column = 'geometry'
+        WHERE f_table_name = 'geonames' AND f_geometry_column = 'geom'
           AND search_frame = BuildCircleMbr(
               CAST(:lon AS REAL), CAST(:lat AS REAL), 0.5, 4326)
     )

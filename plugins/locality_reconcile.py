@@ -280,7 +280,7 @@ def manifest(datasette, request):
         "schemaSpace": config.get("schema_space", "https://gadm.org/"),
         "defaultTypes": TYPES,
         "view": {"url": base + "/view/{{id}}"},
-        "preview": {"url": base + "/preview?id={{id}}", "width": 430, "height": 170},
+        "preview": {"url": base + "/preview?id={{id}}", "width": 460, "height": 180},
         "batchSize": 10,
         "suggest": {
             "entity": service("/suggest/entity"),
@@ -305,23 +305,72 @@ def _escape(value):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
+async def outline_svg(db, unit):
+    """An SVG outline of the unit (within its state, for a district) from
+    the simplified display geometry, with its centre marked. Empty if
+    SpatiaLite is not loaded or the unit has no geometry."""
+    try:
+        rows = await db.execute(
+            """
+            select AsSVG(u.geometry, 1, 4) as unit_path,
+                   AsSVG(s.geometry, 1, 4) as state_path,
+                   s.min_lon, s.min_lat, s.max_lon, s.max_lat
+            from gadm_units as u join gadm_units as s on s.gid = u.admin1_gid
+            where u.gid = ?
+            """,
+            [unit["gid"]],
+        )
+    except Exception:  # SpatiaLite not loaded
+        return ""
+    if not rows.rows or not rows.rows[0]["unit_path"]:
+        return ""
+    r = rows.rows[0]
+    width, height = r["max_lon"] - r["min_lon"], r["max_lat"] - r["min_lat"]
+    pad = max(width, height) * 0.04
+    view_box = (f"{r['min_lon'] - pad:.5f} {-r['max_lat'] - pad:.5f} "
+                f"{width + 2 * pad:.5f} {height + 2 * pad:.5f}")
+    stroke = 'vector-effect="non-scaling-stroke" stroke-width="1" fill-rule="evenodd"'
+    state = ""
+    if unit["type"] == "district":
+        state = f'<path d="{r["state_path"]}" fill="#eeeeee" stroke="#9a9a9a" {stroke}/>'
+    dot = max(width, height) * 0.018
+    return (
+        f'<svg viewBox="{view_box}" width="150" height="150" '
+        f'preserveAspectRatio="xMidYMid meet" role="img" '
+        f'aria-label="Outline of {_escape(unit["label"])}">'
+        f"{state}"
+        f'<path d="{r["unit_path"]}" fill="#2f7fbf" fill-opacity="0.45" '
+        f'stroke="#1d5a8a" {stroke}/>'
+        f'<circle cx="{unit["lon"]}" cy="{-unit["lat"]}" r="{dot:.5f}" fill="#c0392b"/>'
+        f"</svg>"
+    )
+
+
+UNIT_COLUMNS = ("gid, level, type, name, label, admin1_gid, admin1_name, unit_type, "
+                "lat, lon, uncertainty_m, area_km2, min_lat, min_lon, max_lat, max_lon")
+
+
 async def preview_view(request, datasette):
     name, db = await _database(datasette, request)
     gid = request.args.get("id", "")
-    rows = (await db.execute("select * from gadm_units where gid = ?", [gid])).rows
+    rows = (await db.execute(
+        f"select {UNIT_COLUMNS} from gadm_units where gid = ?", [gid])).rows
     if not rows:
         return Response.html("<p>Unknown GADM unit</p>", status=404)
     u = dict(rows[0])
     link = datasette.urls.row(name, "gadm_units", tilde_encode(gid))
+    svg = await outline_svg(db, u)
     html = f"""<!doctype html><html><head><meta charset="utf-8">
-<style>body{{font:13px/1.4 system-ui,sans-serif;margin:8px}}
-th{{text-align:left;padding-right:8px;font-weight:600;color:#555}}</style></head>
-<body><div><a href="{_escape(link)}" target="_blank"><b>{_escape(u['label'])}</b></a>
-&nbsp;<code>{_escape(u['gid'])}</code></div><table>
+<style>body{{font:13px/1.4 system-ui,sans-serif;margin:8px;display:flex;gap:12px}}
+th{{text-align:left;padding-right:8px;font-weight:600;color:#555;vertical-align:top}}
+svg{{flex:none}}</style></head>
+<body><div><div><a href="{_escape(link)}" target="_blank"><b>{_escape(u['label'])}</b></a></div>
+<div><code>{_escape(u['gid'])}</code></div><table>
 <tr><th>Type</th><td>{_escape(u['type'])} ({_escape(u['unit_type'])})</td></tr>
-<tr><th>Centre</th><td>{u['lat']}, {u['lon']} (WGS84)</td></tr>
+<tr><th>Centre</th><td>{u['lat']}, {u['lon']}</td></tr>
 <tr><th>Uncertainty</th><td>{u['uncertainty_m']:,} m</td></tr>
-<tr><th>Area</th><td>{u['area_km2']:,} km&sup2;</td></tr></table></body></html>"""
+<tr><th>Area</th><td>{u['area_km2']:,} km&sup2;</td></tr></table></div>
+{svg}</body></html>"""
     return Response.html(html)
 
 
@@ -380,7 +429,7 @@ async def extend_data(db, data):
     if ids:
         placeholders = ", ".join("?" for _ in ids)
         result = await db.execute(
-            f"select * from gadm_units where gid in ({placeholders})", ids
+            f"select {UNIT_COLUMNS} from gadm_units where gid in ({placeholders})", ids
         )
         found = {r["gid"]: dict(r) for r in result}
     rows = {}

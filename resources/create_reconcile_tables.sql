@@ -1,11 +1,14 @@
 -- Tables for the GADM locality reconciliation service
 -- (plugins/locality_reconcile.py). Needs SpatiaLite, the gadm_adm_* tables
--- and the geonames geometry column. Rebuilt from scratch each run.
+-- and the geonames geom column. Rebuilt from scratch each run.
 
 -- One row per GADM state (level 1) and district (level 2), with a
 -- point-radius georeference: the centre of the unit (centroid, or a point
 -- inside it when the centroid falls outside) and the distance from it to the
 -- furthest boundary point (a convex hull vertex).
+SELECT DiscardGeometryColumn('gadm_units', 'geometry')
+WHERE EXISTS (SELECT 1 FROM geometry_columns
+              WHERE f_table_name = 'gadm_units' AND f_geometry_column = 'geometry');
 DROP TABLE IF EXISTS gadm_units;
 CREATE TABLE gadm_units (
     gid TEXT PRIMARY KEY,
@@ -62,6 +65,21 @@ SELECT c.gid, c.level, c.type, c.name, c.label, c.admin1_gid, c.admin1_name,
 FROM centred AS c
 JOIN radius AS r USING (gid);
 
+-- A simplified outline for display only (web maps and the OpenRefine
+-- preview): about 200 m tolerance, snapped to a 1 m grid, roughly 5% of the
+-- size of the GADM polygons. Spatial calculations use gadm_adm_* instead.
+SELECT AddGeometryColumn('gadm_units', 'geometry', 4326, 'MULTIPOLYGON', 'XY');
+UPDATE gadm_units
+SET geometry = (
+    SELECT coalesce(
+               CastToMulti(ST_SnapToGrid(ST_SimplifyPreserveTopology(a.geometry, 0.002), 0.00001)),
+               CastToMulti(a.geometry))
+    FROM (SELECT GID_1 AS gid, geometry FROM gadm_adm_1
+          UNION ALL
+          SELECT GID_2, geometry FROM gadm_adm_2) AS a
+    WHERE a.gid = gadm_units.gid
+);
+
 -- Which state and district each gazetteer place lies in. Places just outside
 -- every polygon (coastal and sea features, mostly) are given the nearest
 -- district within about 10 km; assigned_by records which.
@@ -78,12 +96,12 @@ SELECT g.geonameid,
        (SELECT d.GID_2 FROM gadm_adm_2 AS d
         WHERE d.rowid IN (SELECT rowid FROM SpatialIndex
                           WHERE f_table_name = 'gadm_adm_2'
-                            AND search_frame = g.geometry)
-          AND ST_Contains(d.geometry, g.geometry) = 1
+                            AND search_frame = g.geom)
+          AND ST_Contains(d.geometry, g.geom) = 1
         LIMIT 1),
        'contains'
 FROM geonames AS g
-WHERE g.geometry IS NOT NULL;
+WHERE g.geom IS NOT NULL;
 
 UPDATE place_units
 SET gid_2 = (
@@ -92,8 +110,8 @@ SET gid_2 = (
         WHERE g.geonameid = place_units.geonameid
           AND d.rowid IN (SELECT rowid FROM SpatialIndex
                           WHERE f_table_name = 'gadm_adm_2'
-                            AND search_frame = BuildCircleMbr(X(g.geometry), Y(g.geometry), 0.1))
-        ORDER BY ST_Distance(d.geometry, g.geometry)
+                            AND search_frame = BuildCircleMbr(X(g.geom), Y(g.geom), 0.1))
+        ORDER BY ST_Distance(d.geometry, g.geom)
         LIMIT 1),
     assigned_by = 'nearest'
 WHERE gid_2 IS NULL;

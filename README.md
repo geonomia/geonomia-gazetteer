@@ -1,5 +1,17 @@
 A project that presents a geonames gazetteer for a specified country as a datasette instance with an MCP server configured for use in AI applications which support tool calling. Planned to integrate with geonomia for location intelligence.
 
+## Maps
+
+Tables with spatial data are shown on a map in the web interface, on an [OpenTopoMap](https://opentopomap.org) basemap. Its contours and terrain help when reading labels such as "foot of Gunung X".
+
+- **Places.** The `geonames` table, and any query with `latitude`/`longitude` or `lat`/`lon` columns, gets a clustered point map ([datasette-cluster-map](https://github.com/simonw/datasette-cluster-map)). That includes the results of the `find_place`, `reverse_geocode` and `admin_unit_georeference` canned queries. The map loads every matching row, not just the current page.
+- **Boundaries.** Any table or query with a column named `geometry` gets a polygon map ([datasette-geojson-map](https://github.com/eyeseast/datasette-geojson-map)). The same queries can also be downloaded as GeoJSON by adding `.geojson` to the URL.
+  - `gadm_units` holds simplified outlines for display: about 200 m tolerance, around 0.7 MB for all states and districts.
+  - The full-resolution GADM tables (`gadm_adm_0`, `gadm_adm_1` and `gadm_adm_2`, about 14 MB in all) are hidden from the table list because their maps would be slow to load. Spatial queries still use them.
+- **Column names.** The point column on `geonames` is called `geom`, not `geometry`, so that the `geonames` page gets only the cluster map. To map a query's points as GeoJSON, select `geom AS geometry`.
+- **One map per page.** `gadm_units` has `lat`/`lon` columns for its unit centres. To stop it getting a point map beside its polygon map, its table settings in `metadata.json` point `datasette-cluster-map` at columns that don't exist (`no_point_map`). Those table settings must also repeat the basemap, because Datasette ignores the instance-wide plugin settings for any table that has plugin settings of its own.
+- **OpenRefine preview.** The reconciliation service's preview shows each candidate's outline within its state.
+
 ## Reconciling localities to GADM units (OpenRefine)
 
 The instance runs a reconciliation service that takes a verbatim locality description from a specimen label and suggests the GADM state or district it lies in. It is meant for curators reconciling a spreadsheet column in OpenRefine.
@@ -103,7 +115,7 @@ After adding or editing a query, run `make metadata`. It writes the queries into
 
 The queries depend on:
 - the SpatiaLite extension;
-- the `geometry` column on `geonames`;
+- the `geom` point column on `geonames`;
 - the `geonames_names` lookup table;
 - the `gadm_adm_*` boundary tables.
 

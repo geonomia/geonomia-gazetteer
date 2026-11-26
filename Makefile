@@ -85,6 +85,7 @@ install: $(VENV_SENTINEL)
 
 data/geonames.db: data/$(COUNTRY_CODE).txt data/admin_1_codes.csv data/admin_2_codes.csv downloads/$(COUNTRY_CODE).gpkg | $(VENV_SENTINEL)
 	mkdir -p data
+	rm -f $@
 	$(PYTHON) -m sqlite_utils create-database $@
 	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_feature_classes.sql
 	$(PYTHON) -m sqlite_utils insert $@ feature_classes resources/feature_classes.csv --csv --pk=code

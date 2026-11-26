@@ -10,7 +10,32 @@
                 },
                 "gadm_units": {
                     "label_column": "label",
-                    "description": "GADM 4.1 states and districts, the candidates of the locality reconciliation service at /-/reconcile/gadm, with a point-radius georeference (centre and uncertainty radius) for each."
+                    "description": "GADM 4.1 states and districts, the candidates of the locality reconciliation service at /-/reconcile/gadm, with a point-radius georeference (centre and uncertainty radius) and a simplified outline (geometry) for display.",
+                    "plugins": {
+                        "datasette-cluster-map": {
+                            "latitude_column": "no_point_map",
+                            "longitude_column": "no_point_map"
+                        },
+                        "datasette-geojson-map": {
+                            "tile_layer": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+                            "tile_layer_options": {
+                                "maxZoom": 17,
+                                "attribution": "Map data: &copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors, <a href=\"http://viewfinderpanoramas.org\">SRTM</a> | Map style: &copy; <a href=\"https://opentopomap.org\">OpenTopoMap</a> (<a href=\"https://creativecommons.org/licenses/by-sa/3.0/\">CC-BY-SA</a>)"
+                            }
+                        }
+                    }
+                },
+                "gadm_adm_0": {
+                    "hidden": true,
+                    "description": "GADM 4.1 country at full resolution, used by spatial queries. Hidden from the table list because its map would download several MB; gadm_units has simplified outlines for display."
+                },
+                "gadm_adm_1": {
+                    "hidden": true,
+                    "description": "GADM 4.1 states at full resolution, used by spatial queries. Hidden from the table list because its map would download several MB; gadm_units has simplified outlines for display."
+                },
+                "gadm_adm_2": {
+                    "hidden": true,
+                    "description": "GADM 4.1 districts at full resolution, used by spatial queries. Hidden from the table list because its map would download several MB; gadm_units has simplified outlines for display."
                 }
             },
             "queries": {
@@ -39,7 +64,7 @@
                         "lon",
                         "feature_classes"
                     ],
-                    "sql": "WITH pt AS (\n    SELECT MakePoint(CAST(:lon AS REAL), CAST(:lat AS REAL), 4326) AS g\n),\nadmin AS (\n    SELECT 1 AS sort, 'country' AS kind, NULL AS geonameid, a.COUNTRY AS name,\n           NULL AS feature_code, 'country' AS feature,\n           NULL AS admin1_name, NULL AS admin2_name\n    FROM gadm_adm_0 AS a, pt\n    WHERE MbrContains(a.geometry, pt.g) = 1 AND ST_Contains(a.geometry, pt.g) = 1\n    UNION ALL\n    SELECT 2, 'state', NULL, a.NAME_1, NULL, lower(a.ENGTYPE_1), a.NAME_1, NULL\n    FROM gadm_adm_1 AS a, pt\n    WHERE MbrContains(a.geometry, pt.g) = 1 AND ST_Contains(a.geometry, pt.g) = 1\n    UNION ALL\n    SELECT 3, 'district', NULL, a.NAME_2, NULL, lower(a.ENGTYPE_2), a.NAME_1, a.NAME_2\n    FROM gadm_adm_2 AS a, pt\n    WHERE MbrContains(a.geometry, pt.g) = 1 AND ST_Contains(a.geometry, pt.g) = 1\n),\nnearby AS (\n    SELECT g.geonameid, g.name, g.feature_code, g.latitude, g.longitude,\n           g.admin1_code, g.admin2_code,\n           ST_Distance(g.geometry, pt.g, 1) AS distance_m,\n           Degrees(Azimuth(g.geometry, pt.g)) AS azimuth\n    FROM geonames AS g, pt\n    WHERE g.rowid IN (\n        SELECT rowid FROM SpatialIndex\n        WHERE f_table_name = 'geonames' AND f_geometry_column = 'geometry'\n          AND search_frame = BuildCircleMbr(\n              CAST(:lon AS REAL), CAST(:lat AS REAL), 0.5, 4326)\n    )\n    AND (trim(:feature_classes) = ''\n         OR instr(',' || upper(replace(:feature_classes, ' ', '')) || ',',\n                  ',' || g.feature_class || ',') > 0)\n    ORDER BY distance_m\n    LIMIT 10\n),\nnearby_described AS (\n    SELECT n.*,\n           CASE WHEN n.distance_m < 50 THEN ''\n                ELSE trim(substr(\n                    'N  NNENE ENEE  ESESE SSES  SSWSW WSWW  WNWNW NNW',\n                    (CAST((n.azimuth + 360 + 11.25) / 22.5 AS INTEGER) % 16) * 3 + 1,\n                    3))\n           END AS direction\n    FROM nearby AS n\n)\nSELECT kind, geonameid, name, feature_code, feature, admin1_name, admin2_name,\n       lat, lon, distance_m, direction, locality\nFROM (\n    SELECT sort, kind, geonameid, name, feature_code, feature,\n           admin1_name, admin2_name,\n           NULL AS lat, NULL AS lon, NULL AS distance_m, NULL AS direction,\n           NULL AS locality\n    FROM admin\n    UNION ALL\n    SELECT 4, 'nearby', n.geonameid, n.name, n.feature_code, fc.description,\n           a1.name, a2.name,\n           round(n.latitude, 5), round(n.longitude, 5),\n           CAST(round(n.distance_m) AS INTEGER),\n           n.direction,\n           CASE WHEN n.direction = '' THEN 'at ' || n.name\n                ELSE printf('%.1f km %s of %s', n.distance_m / 1000.0,\n                            n.direction, n.name)\n           END\n    FROM nearby_described AS n\n    LEFT JOIN feature_codes AS fc ON fc.code = n.feature_code\n    LEFT JOIN admin_1_codes AS a1 ON a1.code = n.admin1_code\n    LEFT JOIN admin_2_codes AS a2 ON a2.code = n.admin2_code\n)\nORDER BY sort, distance_m\n"
+                    "sql": "WITH pt AS (\n    SELECT MakePoint(CAST(:lon AS REAL), CAST(:lat AS REAL), 4326) AS g\n),\nadmin AS (\n    SELECT 1 AS sort, 'country' AS kind, NULL AS geonameid, a.COUNTRY AS name,\n           NULL AS feature_code, 'country' AS feature,\n           NULL AS admin1_name, NULL AS admin2_name\n    FROM gadm_adm_0 AS a, pt\n    WHERE MbrContains(a.geometry, pt.g) = 1 AND ST_Contains(a.geometry, pt.g) = 1\n    UNION ALL\n    SELECT 2, 'state', NULL, a.NAME_1, NULL, lower(a.ENGTYPE_1), a.NAME_1, NULL\n    FROM gadm_adm_1 AS a, pt\n    WHERE MbrContains(a.geometry, pt.g) = 1 AND ST_Contains(a.geometry, pt.g) = 1\n    UNION ALL\n    SELECT 3, 'district', NULL, a.NAME_2, NULL, lower(a.ENGTYPE_2), a.NAME_1, a.NAME_2\n    FROM gadm_adm_2 AS a, pt\n    WHERE MbrContains(a.geometry, pt.g) = 1 AND ST_Contains(a.geometry, pt.g) = 1\n),\nnearby AS (\n    SELECT g.geonameid, g.name, g.feature_code, g.latitude, g.longitude,\n           g.admin1_code, g.admin2_code,\n           ST_Distance(g.geom, pt.g, 1) AS distance_m,\n           Degrees(Azimuth(g.geom, pt.g)) AS azimuth\n    FROM geonames AS g, pt\n    WHERE g.rowid IN (\n        SELECT rowid FROM SpatialIndex\n        WHERE f_table_name = 'geonames' AND f_geometry_column = 'geom'\n          AND search_frame = BuildCircleMbr(\n              CAST(:lon AS REAL), CAST(:lat AS REAL), 0.5, 4326)\n    )\n    AND (trim(:feature_classes) = ''\n         OR instr(',' || upper(replace(:feature_classes, ' ', '')) || ',',\n                  ',' || g.feature_class || ',') > 0)\n    ORDER BY distance_m\n    LIMIT 10\n),\nnearby_described AS (\n    SELECT n.*,\n           CASE WHEN n.distance_m < 50 THEN ''\n                ELSE trim(substr(\n                    'N  NNENE ENEE  ESESE SSES  SSWSW WSWW  WNWNW NNW',\n                    (CAST((n.azimuth + 360 + 11.25) / 22.5 AS INTEGER) % 16) * 3 + 1,\n                    3))\n           END AS direction\n    FROM nearby AS n\n)\nSELECT kind, geonameid, name, feature_code, feature, admin1_name, admin2_name,\n       lat, lon, distance_m, direction, locality\nFROM (\n    SELECT sort, kind, geonameid, name, feature_code, feature,\n           admin1_name, admin2_name,\n           NULL AS lat, NULL AS lon, NULL AS distance_m, NULL AS direction,\n           NULL AS locality\n    FROM admin\n    UNION ALL\n    SELECT 4, 'nearby', n.geonameid, n.name, n.feature_code, fc.description,\n           a1.name, a2.name,\n           round(n.latitude, 5), round(n.longitude, 5),\n           CAST(round(n.distance_m) AS INTEGER),\n           n.direction,\n           CASE WHEN n.direction = '' THEN 'at ' || n.name\n                ELSE printf('%.1f km %s of %s', n.distance_m / 1000.0,\n                            n.direction, n.name)\n           END\n    FROM nearby_described AS n\n    LEFT JOIN feature_codes AS fc ON fc.code = n.feature_code\n    LEFT JOIN admin_1_codes AS a1 ON a1.code = n.admin1_code\n    LEFT JOIN admin_2_codes AS a2 ON a2.code = n.admin2_code\n)\nORDER BY sort, distance_m\n"
                 },
                 "validate_coordinates": {
                     "title": "Check coordinates against the stated state and district",
@@ -67,6 +92,20 @@
                 "MY",
                 "MYS"
             ]
+        },
+        "datasette-cluster-map": {
+            "tile_layer": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+            "tile_layer_options": {
+                "maxZoom": 17,
+                "attribution": "Map data: &copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors, <a href=\"http://viewfinderpanoramas.org\">SRTM</a> | Map style: &copy; <a href=\"https://opentopomap.org\">OpenTopoMap</a> (<a href=\"https://creativecommons.org/licenses/by-sa/3.0/\">CC-BY-SA</a>)"
+            }
+        },
+        "datasette-geojson-map": {
+            "tile_layer": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+            "tile_layer_options": {
+                "maxZoom": 17,
+                "attribution": "Map data: &copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors, <a href=\"http://viewfinderpanoramas.org\">SRTM</a> | Map style: &copy; <a href=\"https://opentopomap.org\">OpenTopoMap</a> (<a href=\"https://creativecommons.org/licenses/by-sa/3.0/\">CC-BY-SA</a>)"
+            }
         }
     }
 }
