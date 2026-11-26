@@ -37,6 +37,7 @@ import itertools
 import json
 import math
 import re
+import sqlite3
 from collections import defaultdict
 
 from datasette import hookimpl
@@ -194,6 +195,59 @@ def register_routes():
 def skip_csrf(datasette, scope):
     # OpenRefine POSTs form-encoded queries without a CSRF token
     return scope.get("path", "").startswith(datasette.urls.path(BASE_PATH))
+
+
+@hookimpl
+def prepare_connection(conn, database, datasette):
+    # The same scoring as a SQL function, so that canned queries (and so MCP
+    # clients) can reconcile a locality: see resources/queries/reconcile_locality.sql
+    config = _config(datasette)
+    if database != config.get("database", "geonames"):
+        return
+
+    def reconcile_locality(text, admin1=None, admin2=None):
+        properties = [{"pid": pid, "v": v}
+                      for pid, v in (("admin1", admin1), ("admin2", admin2)) if v]
+        query = {"query": text or "", "properties": properties, "limit": MAX_LIMIT}
+        results = _run_sync(reconcile_query(_ConnectionDb(conn), query, config))
+        return json.dumps(results)
+
+    conn.create_function("reconcile_locality", -1, reconcile_locality)
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class _ConnectionDb:
+    """Stands in for a Datasette Database inside a SQL function, running the
+    lookup queries directly on the connection that called the function."""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    async def execute(self, sql, params=None):
+        cursor = self.conn.cursor()
+        cursor.row_factory = sqlite3.Row
+        try:
+            return _Rows(cursor.execute(sql, params or []).fetchall())
+        finally:
+            cursor.close()
+
+
+def _run_sync(coroutine):
+    # Datasette runs SQL in executor threads, which have no event loop. Nothing
+    # here awaits anything but _ConnectionDb.execute, so this never blocks.
+    try:
+        coroutine.send(None)
+    except StopIteration as done:
+        return done.value
+    coroutine.close()
+    raise RuntimeError("reconcile_locality: unexpected suspension")
 
 
 # --- views ---------------------------------------------------------------

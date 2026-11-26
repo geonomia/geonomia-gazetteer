@@ -206,6 +206,36 @@ def test_preview_outline(ds):
     assert state.count("<path") == 1
 
 
+# --- canned query (for MCP clients) ----------------------------------------
+
+def canned(ds, locality, admin1="", admin2=""):
+    response = get(ds, "/geonames/reconcile_locality.json", params={
+        "locality": locality, "admin1": admin1, "admin2": admin2,
+        "_shape": "objects"})
+    assert response.status_code == 200, response.text
+    return response.json()["rows"]
+
+
+def test_canned_query_matches_service(ds):
+    text = "Kg. Sg. Rengit, Kota Tinggi"
+    rows, service = canned(ds, text), reconcile(ds, text, limit=25)
+    assert [r["gid"] for r in rows] == [r["id"] for r in service]
+    assert rows[0]["gid"] == "MYS.1.4_1" and rows[0]["is_match"] == 1
+    assert rows[0]["score"] == service[0]["score"]
+    assert rows[0]["uncertainty_m"] > 0
+
+
+def test_canned_query_uses_admin1_and_offsets(ds):
+    assert canned(ds, "Batu Pahat", admin1="Johore")[0]["gid"] == "MYS.1.1_1"
+    districts = [r for r in canned(ds, "10 mi S of Kuala Lumpur")
+                 if r["unit_type"] == "district"]
+    assert districts[0]["gid"].startswith("MYS.15.")
+
+
+def test_canned_query_no_names(ds):
+    assert canned(ds, "roadside near the river") == []
+
+
 # --- maps ------------------------------------------------------------------
 
 def columns(ds, table):

@@ -60,6 +60,7 @@ The instance runs a reconciliation service that takes a verbatim locality descri
 
 - **The service:** [plugins/locality_reconcile.py](plugins/locality_reconcile.py), implementing versions 0.1 and 0.2 of the Reconciliation API with suggest, preview, view and data extension.
 - **Its tables:** `gadm_units`, `gadm_unit_names` and `place_units`, built by [resources/create_reconcile_tables.sql](resources/create_reconcile_tables.sql) as part of `make db`. Use `make reconcile-tables` to rebuild them alone.
+- **For MCP clients and SQL:** the plugin also registers a SQL function, `reconcile_locality(text, admin1, admin2)`, which runs the same scoring and returns the candidates as a JSON array. The `reconcile_locality` canned query turns that array into rows, so AI clients get the same answers as OpenRefine even when the instance is served with `default_allow_sql off`.
 - **Configuration:** under `plugins.locality-reconcile` in [resources/metadata.json](resources/metadata.json). The settings are `database`, `service_name` and `countries`.
 - **Tests:** `make test` runs [tests/test_locality_reconcile.py](tests/test_locality_reconcile.py) against the built database.
 
@@ -77,6 +78,7 @@ When the instance is served with `--setting default_allow_sql off`, MCP clients 
 | `reverse_geocode` | `lat`, `lon`, `feature_classes` (optional) | Describes a point: the country, state and district containing it, and the 10 nearest gazetteer places within about 50 km, each with distance, compass direction and a locality phrase such as "3.2 km NE of Kampung X". |
 | `validate_coordinates` | `lat`, `lon`, `admin1`, `admin2` (optional) | Checks whether a point falls in the state and district named on the label. Also tests the common transcription errors (latitude and longitude swapped, signs flipped), reporting the distance to the stated unit and an assessment for each. |
 | `admin_unit_georeference` | `admin1`, `admin2` (optional) | Point-radius georeference for a locality that can only be placed in a state or district: the centre of the unit and the distance from it to the furthest point of the unit's boundary. |
+| `reconcile_locality` | `locality`, `admin1`, `admin2` (both optional) | Suggests the GADM state or district a verbatim label locality lies in, using the same scoring as the [OpenRefine reconciliation service](#reconciling-localities-to-gadm-units-openrefine). Returns up to 25 candidates with `score`, `is_match`, the `evidence` behind each, and the unit's centre and uncertainty radius. |
 
 ### Proposed
 
