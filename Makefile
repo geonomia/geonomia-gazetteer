@@ -13,9 +13,15 @@ VENV_SENTINEL := $(VENV_DIR)/venv_sentinel
 ifeq ($(OS),Windows_NT)
 SYSTEM_PYTHON ?= python
 PYTHON := $(VENV_DIR)/Scripts/python.exe
+# Folder holding mod_spatialite.dll and its dependency DLLs; override with
+# `make run SPATIALITE_DIR=...`. plugins/windows_dll_dirs.py makes them loadable.
+SPATIALITE_DIR ?= C:/nicky/spatialite-test
+SPATIALITE_EXT := $(SPATIALITE_DIR)/mod_spatialite.dll
 else
 SYSTEM_PYTHON ?= python3
 PYTHON := $(VENV_DIR)/bin/python
+# Datasette searches the usual install locations for mod_spatialite
+SPATIALITE_EXT := spatialite
 endif
 
 echo:
@@ -77,7 +83,7 @@ $(VENV_SENTINEL): requirements.txt
 
 install: $(VENV_SENTINEL)
 
-data/geonames.db: data/$(COUNTRY_CODE).txt data/admin_1_codes.csv data/admin_2_codes.csv | $(VENV_SENTINEL)
+data/geonames.db: data/$(COUNTRY_CODE).txt data/admin_1_codes.csv data/admin_2_codes.csv downloads/$(COUNTRY_CODE).gpkg | $(VENV_SENTINEL)
 	mkdir -p data
 	$(PYTHON) -m sqlite_utils create-database $@
 	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_feature_classes.sql
@@ -90,11 +96,17 @@ data/geonames.db: data/$(COUNTRY_CODE).txt data/admin_1_codes.csv data/admin_2_c
 	$(PYTHON) -m sqlite_utils insert $@ admin_2_codes data/admin_2_codes.csv --tsv --pk=code
 	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_geonames.sql
 	{ $(PYTHON) -c 'print("\t".join(["geonameid","name","asciiname","alternatenames","latitude","longitude","feature_class","feature_code","country_code","cc2","admin1_code","admin2_code","admin3_code","admin4_code","population","elevation","dem","timezone","modification_date"]))'; cat data/$(COUNTRY_CODE).txt; } | $(PYTHON) -m sqlite_utils insert $@ geonames - --tsv --pk=geonameid
-	
+	$(PYTHON) scripts/spatialite_sql.py $@ resources/add_geonames_geometry.sql --extension $(SPATIALITE_EXT)
+	$(PYTHON) scripts/import_gpkg.py $@ downloads/$(COUNTRY_CODE).gpkg --prefix gadm_ --strip ADM_ --extension $(SPATIALITE_EXT)
+
+# (Re)import the GADM boundaries into an existing database
+gadm: downloads/$(COUNTRY_CODE).gpkg | $(VENV_SENTINEL)
+	$(PYTHON) scripts/import_gpkg.py data/geonames.db $< --prefix gadm_ --strip ADM_ --extension $(SPATIALITE_EXT)
+
 db: data/geonames.db
 
 run: data/geonames.db | $(VENV_SENTINEL)
-	$(PYTHON) -m datasette serve $< --host localhost --port 8001 --plugins-dir plugins --metadata resources/metadata.json --template-dir templates
+	$(PYTHON) -m datasette serve $< --host localhost --port 8001 --load-extension=$(SPATIALITE_EXT) --plugins-dir plugins --metadata resources/metadata.json --template-dir templates
 
 clean:
 	rm -rf data
