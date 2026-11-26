@@ -99,6 +99,15 @@ data/geonames.db: data/$(COUNTRY_CODE).txt data/admin_1_codes.csv data/admin_2_c
 	$(PYTHON) scripts/spatialite_sql.py $@ resources/add_geonames_geometry.sql --extension $(SPATIALITE_EXT)
 	$(PYTHON) scripts/spatialite_sql.py $@ resources/create_table_geonames_names.sql --extension $(SPATIALITE_EXT)
 	$(PYTHON) scripts/import_gpkg.py $@ downloads/$(COUNTRY_CODE).gpkg --prefix gadm_ --strip ADM_ --extension $(SPATIALITE_EXT)
+	$(PYTHON) scripts/spatialite_sql.py $@ resources/create_reconcile_tables.sql --extension $(SPATIALITE_EXT)
+
+# Rebuild the reconciliation service's tables in an existing database
+reconcile-tables: | $(VENV_SENTINEL)
+	$(PYTHON) scripts/spatialite_sql.py data/geonames.db resources/create_reconcile_tables.sql --extension $(SPATIALITE_EXT)
+
+test: data/geonames.db | $(VENV_SENTINEL)
+	$(PYTHON) -m pip install -q -r requirements-dev.txt
+	SPATIALITE_EXT=$(SPATIALITE_EXT) $(PYTHON) -m pytest tests
 
 # Write the canned queries in resources/queries/*.sql into resources/metadata.json
 metadata: $(wildcard resources/queries/*.sql) | $(VENV_SENTINEL)

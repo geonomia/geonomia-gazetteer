@@ -7,6 +7,10 @@
                 },
                 "feature_codes": {
                     "label_column": "description"
+                },
+                "gadm_units": {
+                    "label_column": "label",
+                    "description": "GADM 4.1 states and districts, the candidates of the locality reconciliation service at /-/reconcile/gadm, with a point-radius georeference (centre and uncertainty radius) for each."
                 }
             },
             "queries": {
@@ -54,6 +58,15 @@
     "plugins": {
         "datasette-mcp": {
             "canned_queries": true
+        },
+        "locality-reconcile": {
+            "database": "geonames",
+            "service_name": "Geonomia: GADM state or district from a locality description",
+            "countries": [
+                "Malaysia",
+                "MY",
+                "MYS"
+            ]
         }
     }
 }
