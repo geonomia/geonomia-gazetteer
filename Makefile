@@ -97,7 +97,12 @@ data/geonames.db: data/$(COUNTRY_CODE).txt data/admin_1_codes.csv data/admin_2_c
 	$(PYTHON) -m sqlite_utils query $@ - < resources/create_table_geonames.sql
 	{ $(PYTHON) -c 'print("\t".join(["geonameid","name","asciiname","alternatenames","latitude","longitude","feature_class","feature_code","country_code","cc2","admin1_code","admin2_code","admin3_code","admin4_code","population","elevation","dem","timezone","modification_date"]))'; cat data/$(COUNTRY_CODE).txt; } | $(PYTHON) -m sqlite_utils insert $@ geonames - --tsv --pk=geonameid
 	$(PYTHON) scripts/spatialite_sql.py $@ resources/add_geonames_geometry.sql --extension $(SPATIALITE_EXT)
+	$(PYTHON) scripts/spatialite_sql.py $@ resources/create_table_geonames_names.sql --extension $(SPATIALITE_EXT)
 	$(PYTHON) scripts/import_gpkg.py $@ downloads/$(COUNTRY_CODE).gpkg --prefix gadm_ --strip ADM_ --extension $(SPATIALITE_EXT)
+
+# Write the canned queries in resources/queries/*.sql into resources/metadata.json
+metadata: $(wildcard resources/queries/*.sql) | $(VENV_SENTINEL)
+	$(PYTHON) scripts/build_canned_queries.py --metadata resources/metadata.json --queries resources/queries --database geonames
 
 # (Re)import the GADM boundaries into an existing database
 gadm: downloads/$(COUNTRY_CODE).gpkg | $(VENV_SENTINEL)
